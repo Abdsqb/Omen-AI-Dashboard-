@@ -3,6 +3,7 @@ import {
   getAllTasks,
   createTask,
   findTaskByName,
+  resolveTask,
   updateTask,
   deleteTask,
   deleteDoneTasks,
@@ -130,23 +131,27 @@ export async function POST(req: NextRequest) {
             actionResult = `"${act.name}" already exists`
           }
         } else if (act.a === 'delete') {
-          const task = findTaskByName(act.name)
-          if (task) {
-            deleteTask(task.id)
-            actionResult = `Deleted "${act.name}"`
+          const match = resolveTask(act.name)
+          if (match.task) {
+            deleteTask(match.task.id)
+            actionResult = `Deleted "${match.task.name}"`
+          } else if (match.ambiguous) {
+            actionResult = `"${act.name}" matches multiple tasks (${match.candidates.map(c => `"${c.name}"`).join(', ')}) — please be more specific`
           } else {
             actionResult = `Not found: "${act.name}"`
           }
         } else if (act.a === 'update') {
-          const task = findTaskByName(act.name)
-          if (task) {
+          const match = resolveTask(act.name)
+          if (match.task) {
             const updateData: Record<string, unknown> = {}
             if (act.status      !== undefined) updateData.status      = act.status
             if (act.deadline    !== undefined) updateData.deadline    = act.deadline
             if (act.priority    !== undefined) updateData.priority    = act.priority
             if (act.description !== undefined) updateData.description = act.description
-            updateTask(task.id, updateData)
-            actionResult = `Updated "${task.name}"`
+            updateTask(match.task.id, updateData)
+            actionResult = `Updated "${match.task.name}"`
+          } else if (match.ambiguous) {
+            actionResult = `"${act.name}" matches multiple tasks (${match.candidates.map(c => `"${c.name}"`).join(', ')}) — please be more specific`
           } else {
             actionResult = `Not found: "${act.name}"`
           }

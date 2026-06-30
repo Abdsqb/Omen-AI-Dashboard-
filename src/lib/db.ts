@@ -78,6 +78,84 @@ export function findTaskByName(name: string): Task | null {
   return row ? (row as unknown as Task) : null
 }
 
+// ─── Tolerant task resolution ───────────────────────────────────────────────
+// The AI references tasks by name, but its name can differ slightly from the
+// board (casing, spacing, a partial phrase, or a small typo). resolveTask finds
+// the intended task through progressively looser tiers, and — crucially —
+// refuses to guess when a loose match is ambiguous, returning the candidates so
+// the caller can ask the user to clarify instead of acting on the wrong task.
+
+/** Lowercase, trim, and collapse internal whitespace for tolerant comparison. */
+function normalizeName(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+/** Levenshtein edit distance — inputs are short task names, so this is cheap. */
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0
+  if (!a.length) return b.length
+  if (!b.length) return a.length
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  let curr = new Array<number>(b.length + 1)
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+    }
+    ;[prev, curr] = [curr, prev]
+  }
+  return prev[b.length]
+}
+
+export interface TaskMatch {
+  task: Task | null      // the resolved task, if a confident single match was found
+  ambiguous: boolean     // true when the name matched multiple tasks
+  candidates: Task[]     // the competing tasks, when ambiguous
+}
+
+export function resolveTask(name: string): TaskMatch {
+  const none: TaskMatch = { task: null, ambiguous: false, candidates: [] }
+  const all = getAllTasks()
+  if (!name || all.length === 0) return none
+
+  const target = normalizeName(name)
+  const pick = (hits: Task[]): TaskMatch | null => {
+    if (hits.length === 1) return { task: hits[0], ambiguous: false, candidates: [] }
+    if (hits.length > 1) return { task: null, ambiguous: true, candidates: hits }
+    return null
+  }
+
+  // Tier 1 — exact match after normalization (casing/whitespace).
+  const exact = pick(all.filter(t => normalizeName(t.name) === target))
+  if (exact) return exact
+
+  // Tier 2 — containment in either direction (e.g. "landing page" → "Launch landing page").
+  const contains = pick(
+    all.filter(t => {
+      const n = normalizeName(t.name)
+      return n.includes(target) || target.includes(n)
+    })
+  )
+  if (contains) return contains
+
+  // Tier 3 — closest by edit distance, but only when it's clearly close AND
+  // clearly the single best (the runner-up must be at least one edit further).
+  const scored = all
+    .map(t => ({ t, d: editDistance(normalizeName(t.name), target) }))
+    .sort((a, b) => a.d - b.d)
+  const best = scored[0]
+  const longest = Math.max(target.length, normalizeName(best.t.name).length)
+  const threshold = Math.max(2, Math.floor(longest * 0.25)) // tolerate ~25% typos
+  if (best.d <= threshold) {
+    const tiedForBest = scored.filter(s => s.d === best.d)
+    if (tiedForBest.length === 1) return { task: best.t, ambiguous: false, candidates: [] }
+    return { task: null, ambiguous: true, candidates: tiedForBest.map(s => s.t) }
+  }
+
+  return none
+}
+
 export function createTask(data: {
   name: string
   status?: string
