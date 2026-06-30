@@ -6,11 +6,13 @@ import { useRingEngine } from '@/hooks/useRingEngine'
 
 interface RingCanvasProps {
   agentState: AgentState
+  pulse?: number
+  pulseStrength?: number
 }
 
-export default function RingCanvas({ agentState }: RingCanvasProps) {
+export default function RingCanvas({ agentState, pulse = 0, pulseStrength = 1 }: RingCanvasProps) {
   const ringCanvasRef = useRef<HTMLCanvasElement>(null)
-  useRingEngine(ringCanvasRef, agentState)
+  useRingEngine(ringCanvasRef, agentState, pulse, pulseStrength)
 
   return (
     <div className="ring-wrap">

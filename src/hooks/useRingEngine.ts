@@ -3,10 +3,20 @@ import { AgentState } from '@/types'
 
 export function useRingEngine(
   canvasRef: React.RefObject<HTMLCanvasElement>,
-  agentState: AgentState
+  agentState: AgentState,
+  pulse: number = 0,
+  pulseStrength: number = 1
 ) {
   const stateRef = useRef(agentState)
   useEffect(() => { stateRef.current = agentState }, [agentState])
+
+  // A counter that increments on each pulse trigger; the loop watches it and
+  // fires a one-shot pulse when it changes. `pulseStrength` (0..1) scales how
+  // strong that pulse is — full for opening, barely-there for closing.
+  const pulseRef = useRef(pulse)
+  const strengthRef = useRef(pulseStrength)
+  useEffect(() => { pulseRef.current = pulse }, [pulse])
+  useEffect(() => { strengthRef.current = pulseStrength }, [pulseStrength])
 
   useEffect(() => {
     const RC = canvasRef.current
@@ -15,17 +25,28 @@ export function useRingEngine(
     const W = 700, H = 700, CX = 350, CY = 350
     const RING_R = 248
 
-    // Kill any loop left running by a previous mount / hot-reload. Without this,
-    // dev Fast Refresh (frequent here because the project lives in a OneDrive
-    // folder) stacks RAF loops on the same canvas — each redraws every frame with
-    // a drifting phase, so the ring appears to speed up and CPU climbs over time.
-    const win = window as typeof window & { __omenRingRAF?: number }
+    // Guard against stacked animation loops. Dev Fast Refresh (frequent here
+    // because the project lives in a OneDrive folder) can leave a previous loop
+    // running; each extra loop redraws the canvas every frame with a drifting
+    // phase, so the ring appears to speed up and CPU climbs over time.
+    //
+    // Two mechanisms: (1) cancel the tracked rAF id, and (2) a "generation" token
+    // — each new loop claims the next generation, and every frame checks it's
+    // still current; any older loop (even one this guard never tracked) sees a
+    // newer generation and terminates itself on its next frame.
+    const win = window as typeof window & {
+      __omenRingRAF?: number
+      __omenRingGen?: number
+    }
     if (win.__omenRingRAF != null) cancelAnimationFrame(win.__omenRingRAF)
+    const myGen = win.__omenRingGen = (win.__omenRingGen ?? 0) + 1
 
     let T = 0, breathT = 0, thinkT = 0, speakT = 0, listenT = 0
     let hot1 = Math.PI * 1.5
     let hot2 = Math.PI * 0.5
     let flashAlpha = 0
+    let pulseEnergy = 0
+    let lastPulseSeen = pulseRef.current
     let prevState = 'idle'
     let lastTime: number | null = null
 
@@ -41,6 +62,9 @@ export function useRingEngine(
     }
 
     function drawRingFrame(timestamp: number) {
+      // A newer loop has taken over — stop this one (don't reschedule).
+      if (myGen !== win.__omenRingGen) return
+
       // Delta time in seconds, capped at 50ms to prevent tab-switch jumps
       if (lastTime === null) lastTime = timestamp
       const raw = (timestamp - lastTime) / 1000
@@ -57,9 +81,20 @@ export function useRingEngine(
 
       rctx.clearRect(0, 0, W, H)
       flashAlpha = Math.max(0, flashAlpha - 0.018 * dt * BASE)
+      pulseEnergy = Math.max(0, pulseEnergy - 0.045 * dt * BASE)
 
       const s = stateRef.current
       if (s !== prevState) { flashAlpha = 1.0; prevState = s }
+
+      // Ring pulse: a one-shot swell + flash when the trigger counter changes,
+      // scaled by the requested strength (full on open, very slight on close).
+      if (pulseRef.current !== lastPulseSeen) {
+        lastPulseSeen = pulseRef.current
+        pulseEnergy = strengthRef.current
+        flashAlpha = strengthRef.current
+      }
+      // Eased so the swell pops quickly then settles.
+      const pulse = pulseEnergy * pulseEnergy
 
       let tgt = {
         bright: 1.0, hot1Speed: 0.005, hot2Speed: -0.004,
@@ -90,6 +125,17 @@ export function useRingEngine(
         (cur as Record<string, number>)[k] += (tgt[k as keyof typeof tgt] - (cur as Record<string, number>)[k]) * L
       }
 
+      // The ring rotates at a fixed, calm speed. State changes (idle/listening/
+      // thinking/speaking) still drive brightness, size, and the intensity boosts
+      // via the lerp above — but NOT the rotation speed. Holding flowSpeed
+      // constant also sidesteps an artifact where changing it mid-animation
+      // jolted the flow: the flow phase was computed as T × flowSpeed, and since
+      // T grows without bound, any mid-run change scaled the whole elapsed time,
+      // kicking the speed harder the longer the page had been open.
+      cur.hot1Speed = 0.008
+      cur.hot2Speed = -0.006
+      cur.flowSpeed = 0.9
+
       hot1 += cur.hot1Speed * dt * BASE
       hot2 += cur.hot2Speed * dt * BASE
 
@@ -116,10 +162,10 @@ export function useRingEngine(
         const listenBoost = Math.sin(angle * 3 - listenT * 1.3) * 0.3 * cur.listenW
         const shimmer = Math.sin(angle * 9.5 + T * 6.2) * 0.035
         const wobble = Math.sin(angle * 3.0 - T * cur.flowSpeed * 1.5) * 3.8
-        const dynamicR = RING_R + wobble
+        const dynamicR = RING_R + wobble + pulse * 18
         const px = CX + dynamicR * Math.cos(angle)
         const py = CY + dynamicR * Math.sin(angle)
-        const totalIntensity = flowBase * cur.bright + hs1 + hs2 * 0.7 + thinkBoost + speakBoost + listenBoost + shimmer
+        const totalIntensity = flowBase * cur.bright + hs1 + hs2 * 0.7 + thinkBoost + speakBoost + listenBoost + shimmer + pulse * 0.55
 
         // Layer A: wide atmospheric bloom
         const wA = (totalIntensity + hs1 * 0.18 + hs2 * 0.1) * 0.016 * cur.wideScale

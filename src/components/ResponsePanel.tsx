@@ -5,12 +5,13 @@ import { Message } from '@/types'
 import { md } from '@/utils/helpers'
 
 interface ResponsePanelProps {
+  visible: boolean
   messages: Message[]
   isTyping: boolean
   toast: string | null
 }
 
-export default function ResponsePanel({ messages, isTyping, toast }: ResponsePanelProps) {
+export default function ResponsePanel({ visible, messages, isTyping, toast }: ResponsePanelProps) {
   const msgsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -18,10 +19,10 @@ export default function ResponsePanel({ messages, isTyping, toast }: ResponsePan
   }, [messages, isTyping])
 
   return (
-    <div className="output-float">
+    <div className={`output-float ${visible ? 'is-visible' : 'is-hidden'}`}>
       <div className="output-card">
         <div className="out-head">
-          <div className="out-label">Response</div>
+          <div className="out-label">O·M·E·N</div>
         </div>
 
         <div className="out-msgs" ref={msgsRef}>
@@ -35,7 +36,6 @@ export default function ResponsePanel({ messages, isTyping, toast }: ResponsePan
           {messages.map((msg, i) =>
             msg.role === 'omen' ? (
               <div key={i} className="msg omen">
-                <div className="msg-role">O·M·E·N</div>
                 <div
                   className="msg-body"
                   dangerouslySetInnerHTML={{ __html: md(msg.content) }}
@@ -47,7 +47,6 @@ export default function ResponsePanel({ messages, isTyping, toast }: ResponsePan
 
           {isTyping && (
             <div className="msg omen">
-              <div className="msg-role">O·M·E·N</div>
               <div className="typing">
                 <span className="tdot-a" />
                 <span className="tdot-a" />

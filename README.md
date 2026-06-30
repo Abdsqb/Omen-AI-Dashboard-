@@ -23,7 +23,9 @@ that visibly responds as OMEN listens, thinks, and speaks.
 ## Features
 
 - **Natural-language task control** — "Add *Launch landing page* due Dec 31, high priority", "mark it as doing", "clear all done tasks". OMEN parses intent and mutates the board.
-- **Reactive AI orb** — a Canvas-rendered ring that animates through four states (`idle` / `listening` / `thinking` / `speaking`), with frame-rate-independent timing.
+- **Reactive AI orb** — a Canvas-rendered ring that responds across four states (`idle` / `listening` / `thinking` / `speaking`) through brightness, size, and intensity, with frame-rate-independent timing.
+- **On-demand response panel** — OMEN's replies slide out from the ring when you send a message or click the ring, then auto-hide after 30 seconds (or when you click away) to keep the stage clean.
+- **Type anywhere** — just start typing and the command bar focuses automatically; no need to click it first.
 - **Persistent database** — tasks survive page refreshes, browser closes, and server restarts.
 - **Priority levels** — `low` / `medium` / `high`, shown as colour-coded badges.
 - **Deadlines & descriptions** — stored per task and surfaced on the board.
